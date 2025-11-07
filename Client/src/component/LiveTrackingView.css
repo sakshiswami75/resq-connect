@@ -1,0 +1,487 @@
+/* Main Container */
+.live-tracking-view {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+/* Loading State */
+.tracking-loading {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #007AFF;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+.tracking-loading p {
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error State */
+.tracking-error {
+  text-align: center;
+  padding: 30px;
+  background: rgba(255, 59, 48, 0.1);
+  border-radius: 15px;
+  border: 2px solid rgba(255, 59, 48, 0.3);
+}
+
+.tracking-error p {
+  color: #ff3b30;
+  fontSize: 18px;
+  fontWeight: 700;
+  margin-bottom: 15px;
+}
+
+.retry-btn {
+  padding: 10px 20px;
+  background: #ff3b30;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.3s ease;
+}
+
+.retry-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
+}
+
+/* No Volunteers State */
+.no-volunteers {
+  text-align: center;
+  padding: 60px 30px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+}
+
+.no-volunteers-icon {
+  font-size: 80px;
+  margin-bottom: 20px;
+}
+
+.no-volunteers h3 {
+  color: white;
+  font-size: 24px;
+  margin-bottom: 10px;
+  font-weight: 800;
+}
+
+.no-volunteers p {
+  color: #8e93b1;
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+.emergency-time-info {
+  background: rgba(255, 149, 0, 0.15);
+  padding: 15px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 149, 0, 0.3);
+  margin-top: 20px;
+}
+
+.emergency-time-info p {
+  color: #ff9500;
+  font-size: 14px;
+  margin: 0;
+  font-weight: 600;
+}
+
+/* Tracking Header */
+.tracking-header {
+  background: rgba(0, 255, 0, 0.15);
+  border-radius: 15px;
+  padding: 20px;
+  margin-bottom: 25px;
+  border: 2px solid rgba(0, 255, 0, 0.3);
+}
+
+.tracking-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-indicator.live {
+  color: #00ff00;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.pulse-dot {
+  width: 12px;
+  height: 12px;
+  background: #00ff00;
+  border-radius: 50%;
+  animation: pulse-live 2s ease-in-out infinite;
+  box-shadow: 0 0 15px #00ff00;
+}
+
+@keyframes pulse-live {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.3);
+  }
+}
+
+.volunteers-count {
+  background: rgba(0, 122, 255, 0.2);
+  padding: 10px 20px;
+  border-radius: 25px;
+  color: #007AFF;
+  font-weight: 700;
+  border: 2px solid rgba(0, 122, 255, 0.4);
+}
+
+/* Volunteers List */
+.volunteers-tracking-list {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.volunteer-tracking-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-radius: 20px;
+  padding: 25px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.volunteer-tracking-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0, 122, 255, 0.3);
+  border-color: rgba(0, 122, 255, 0.5);
+}
+
+.volunteer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.volunteer-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.volunteer-avatar {
+  font-size: 48px;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 122, 255, 0.2);
+  border-radius: 50%;
+  border: 3px solid rgba(0, 122, 255, 0.4);
+}
+
+.volunteer-details h3 {
+  margin: 0 0 5px 0;
+  color: white;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.closest-badge {
+  background: linear-gradient(135deg, #00ff00 0%, #00cc00 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  display: inline-block;
+}
+
+.volunteer-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.volunteer-status.active {
+  background: rgba(0, 255, 0, 0.15);
+  color: #00ff00;
+  border: 2px solid rgba(0, 255, 0, 0.4);
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  background: #00ff00;
+  border-radius: 50%;
+  animation: pulse-status 2s ease-in-out infinite;
+}
+
+@keyframes pulse-status {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Tracking Metrics */
+.tracking-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.metric {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 15px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metric.distance {
+  border-left: 4px solid #FF9500;
+}
+
+.metric.eta {
+  border-left: 4px solid #007AFF;
+}
+
+.metric.contact {
+  border-left: 4px solid #34C759;
+}
+
+.metric-icon {
+  font-size: 32px;
+}
+
+.metric-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #8e93b1;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.metric-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: white;
+}
+
+.contact-link {
+  color: #34C759;
+  text-decoration: none;
+  transition: all 0.3s ease;
+}
+
+.contact-link:hover {
+  color: #00ff00;
+  text-decoration: underline;
+}
+
+.last-updated {
+  text-align: right;
+  font-size: 12px;
+  color: #8e93b1;
+  font-style: italic;
+}
+
+/* Map Container */
+.tracking-map-container {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  padding: 25px;
+  margin-bottom: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tracking-map-container h3 {
+  color: white;
+  font-size: 24px;
+  margin-bottom: 20px;
+  font-weight: 800;
+}
+
+.volunteer-info-window {
+  padding: 10px;
+}
+
+.volunteer-info-window h4 {
+  margin: 0 0 10px 0;
+  color: #007AFF;
+  font-size: 18px;
+}
+
+.volunteer-info-window p {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+/* Map Legend */
+.map-legend {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin-top: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #333;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.legend-marker {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.legend-marker.emergency-marker {
+  background: #ff3b30;
+  border: 2px solid white;
+}
+
+.legend-marker.volunteer-marker {
+  background: #007AFF;
+  border: 2px solid white;
+}
+
+.legend-line {
+  width: 40px;
+  height: 4px;
+  background: #007AFF;
+  border-radius: 2px;
+}
+
+/* Tracking Footer */
+.tracking-footer {
+  background: rgba(255, 59, 48, 0.1);
+  border: 2px solid rgba(255, 59, 48, 0.3);
+  border-radius: 15px;
+  padding: 25px;
+  text-align: center;
+}
+
+.critical-notice {
+  color: #ff3b30;
+  font-size: 16px;
+  margin-bottom: 15px;
+  font-weight: 700;
+}
+
+.hotline-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.hotline-btn {
+  background: white;
+  color: #ff3b30;
+  padding: 12px 24px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 700;
+  transition: all 0.3s ease;
+  border: 2px solid #ff3b30;
+  display: inline-block;
+}
+
+.hotline-btn:hover {
+  background: #ff3b30;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .live-tracking-view {
+    padding: 15px;
+  }
+
+  .tracking-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .volunteer-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .map-legend {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hotline-buttons {
+    flex-direction: column;
+  }
+
+  .hotline-btn {
+    width: 100%;
+  }
+
+  .tracking-status {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .volunteers-count {
+    width: 100%;
+    text-align: center;
+  }
+}
