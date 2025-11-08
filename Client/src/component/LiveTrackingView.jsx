@@ -1,420 +1,240 @@
-// src/component/LiveTrackingView.jsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// Client/src/component/LiveTrackingView.jsx
+import React, { useEffect, useRef, useState } from "react";
 import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
 import api from "../services/api";
-import { LIBRARIES, MAP_VERSION } from "../config/googleMaps";
+import {
+  MAP_CONTAINER_STYLE,
+  MAP_OPTIONS,
+  LIBRARIES,
+  MAP_VERSION,
+} from "../config/googleMaps"; // ensure these exports exist
 
-// Module-scope constants
-const MAP_CONTAINER_STYLE = { width: "100%", height: "100%", minHeight: "400px", borderRadius: "12px" };
-const MAP_OPTIONS = {
-  mapTypeControl: false,
-  streetViewControl: false,
-  fullscreenControl: true,
-  zoomControl: true,
-  mapId: "YOUR_MAP_ID",
-};
-const POLL_INTERVAL_MS = 5000;
-const MAX_TRAIL_POINTS = 20; // keep the last N points for each volunteer
+// NOTE: In Vite use import.meta.env to read env vars
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-// Helpers
-const coordsFromGeoJSON = (geo) => {
-  if (!geo || !Array.isArray(geo.coordinates) || geo.coordinates.length < 2) return null;
-  const [lng, lat] = geo.coordinates;
-  return { lat: parseFloat(lat), lng: parseFloat(lng) };
+// A small helper to parse "lat, lng" strings to { lat, lng } objects
+const parseLocationString = (loc) => {
+  if (!loc || typeof loc !== "string") return { lat: 0, lng: 0 };
+  const parts = loc.split(",").map((p) => p.trim());
+  if (parts.length !== 2) return { lat: 0, lng: 0 };
+  return { lat: parseFloat(parts[0]) || 0, lng: parseFloat(parts[1]) || 0 };
 };
 
-const LiveTrackingView = ({ emergency }) => {
-  const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+// Keep libraries array static (avoid re-creating inline arrays)
+const STATIC_LIBRARIES = LIBRARIES && Array.isArray(LIBRARIES) ? LIBRARIES : ["marker"];
 
-  // use the shared LIBRARIES constant — prevents unintentional reload warnings
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey,
-    libraries: LIBRARIES,
-    version: MAP_VERSION,
-  });
+const REFRESH_MS = 5000; // how often to poll backend for live data
 
-  const emergencyLocation = useMemo(() => {
+const LiveTrackingView = ({ emergency, showMap = true }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+
+  // Google map & markers refs
+  const mapRef = useRef(null);
+  const victimMarkerRef = useRef(null);
+  const volunteerMarkersRef = useRef({}); // { volunteerId: marker }
+  const polylineRef = useRef(null);
+
+  // store latest volunteers data
+  const volunteersRef = useRef([]);
+
+  // parse initial center from emergency prop (string "lat,lng")
+  const center = React.useMemo(() => {
     if (!emergency) return { lat: 0, lng: 0 };
-    if (typeof emergency.location === "string") {
-      const parts = emergency.location.split(",");
-      return { lat: parseFloat(parts[0]), lng: parseFloat(parts[1]) };
-    }
-    if (emergency.location?.coordinates) {
-      const [lng, lat] = emergency.location.coordinates;
-      return { lat: parseFloat(lat), lng: parseFloat(lng) };
-    }
-    return { lat: 0, lng: 0 };
+    const parsed = parseLocationString(emergency.location || emergency?.locationString);
+    return parsed;
   }, [emergency]);
 
-  const mapRef = useRef(null);
-  const emergencyMarkerRef = useRef(null);
+  // Load the Google Maps script once using useJsApiLoader
+  const { isLoaded: apiIsLoaded, loadError: apiLoadError } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: GOOGLE_API_KEY,
+    libraries: STATIC_LIBRARIES,
+    version: MAP_VERSION || "weekly",
+  });
 
-  // volunteerDataRef: Map<volId, { marker, trailPolyline, toEmergencyLine, path:Array<LatLng>, lastUpdated }>
-  const volunteerDataRef = useRef(new Map());
-  const pollTimerRef = useRef(null);
-  const isPollingRef = useRef(false); // guard to avoid overlapping polls
-  const [lastFetchError, setLastFetchError] = useState(null);
-
-  const onLoad = useCallback((mapInstance) => {
-    mapRef.current = mapInstance;
-  }, []);
-
-  // Utility: create marker (Advanced if available) and wire click -> InfoWindow
-  const createMarker = (pos, vol) => {
-    if (!window.google?.maps || !mapRef.current) return null;
-    const gm = window.google.maps;
-
-    try {
-      if (gm.marker && typeof gm.marker.AdvancedMarkerElement === "function") {
-        const content = document.createElement("div");
-        content.style.display = "flex";
-        content.style.alignItems = "center";
-        content.style.justifyContent = "center";
-        content.style.width = "36px";
-        content.style.height = "36px";
-        content.style.borderRadius = "50%";
-        content.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
-        content.style.background = "#1976d2";
-        content.style.color = "white";
-        content.style.fontWeight = "600";
-        content.style.fontSize = "12px";
-        content.style.userSelect = "none";
-        content.textContent = vol.name ? (vol.name[0] || "V").toUpperCase() : "V";
-
-        const marker = new gm.marker.AdvancedMarkerElement({
-          position: pos,
-          map: mapRef.current,
-          content,
-          title: vol.name || `Volunteer ${vol._id || ''}`,
-        });
-
-        marker.addListener?.("click", () => {
-          const info = new gm.InfoWindow({
-            content: `<div style="min-width:160px"><strong>${vol.name || 'Volunteer'}</strong><div>ETA: ${vol.eta ?? '—'} min</div><div>Last: ${vol.lastUpdated ? new Date(vol.lastUpdated).toLocaleTimeString() : '—'}</div></div>`
-          });
-          info.open(mapRef.current, marker);
-          setTimeout(() => info.close(), 6000);
-        });
-
-        return marker;
-      } else {
-        const label = vol.name ? vol.name[0].toUpperCase() : "V";
-        const marker = new gm.Marker({
-          position: pos,
-          map: mapRef.current,
-          title: vol.name || `Volunteer ${vol._id || ''}`,
-          label: { text: label, color: "white", fontWeight: "600" },
-        });
-
-        marker.addListener?.("click", () => {
-          const info = new gm.InfoWindow({
-            content: `<div style="min-width:160px"><strong>${vol.name || 'Volunteer'}</strong><div>ETA: ${vol.eta ?? '—'} min</div><div>Last: ${vol.lastUpdated ? new Date(vol.lastUpdated).toLocaleTimeString() : '—'}</div></div>`
-          });
-          info.open(mapRef.current, marker);
-          setTimeout(() => info.close(), 6000);
-        });
-
-        return marker;
-      }
-    } catch (e) {
-      console.warn("createMarker error:", e);
-      return null;
-    }
-  };
-
-  // Create a polyline for trail and a line to emergency
-  const createTrailPolyline = (color = "#2196f3") => {
-    const gm = window.google?.maps;
-    if (!gm || !mapRef.current) return null;
-    return new gm.Polyline({
-      map: mapRef.current,
-      path: [],
-      geodesic: true,
-      strokeColor: color,
-      strokeOpacity: 0.7,
-      strokeWeight: 3,
-    });
-  };
-
-  const createDirectLine = (color = "#ff8a65") => {
-    const gm = window.google?.maps;
-    if (!gm || !mapRef.current) return null;
-    return new gm.Polyline({
-      map: mapRef.current,
-      path: [],
-      geodesic: true,
-      strokeColor: color,
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-    });
-  };
-
-  // Place/update emergency marker
   useEffect(() => {
-    if (!isLoaded || !mapRef.current) return;
-    const gm = window.google?.maps;
-    const map = mapRef.current;
-    if (!gm) return;
-
-    // clear previous emergency marker
-    if (emergencyMarkerRef.current) {
-      try { if (emergencyMarkerRef.current.setMap) emergencyMarkerRef.current.setMap(null); } catch (e) {}
-      emergencyMarkerRef.current = null;
-    }
-
-    try {
-      if (gm.marker && typeof gm.marker.AdvancedMarkerElement === "function") {
-        const content = document.createElement("div");
-        content.style.width = "44px";
-        content.style.height = "44px";
-        content.style.borderRadius = "50%";
-        content.style.background = "#d32f2f";
-        content.style.display = "flex";
-        content.style.alignItems = "center";
-        content.style.justifyContent = "center";
-        content.style.color = "white";
-        content.style.fontWeight = "700";
-        content.textContent = "E";
-
-        const adv = new gm.marker.AdvancedMarkerElement({
-          position: emergencyLocation,
-          map,
-          title: "Emergency Location",
-          content,
-        });
-        emergencyMarkerRef.current = adv;
-      } else {
-        const marker = new gm.Marker({
-          position: emergencyLocation,
-          map,
-          title: "Emergency Location",
-        });
-        emergencyMarkerRef.current = marker;
-      }
-
-      // center/zoom initially
-      try {
-        map.panTo(emergencyLocation);
-        map.setZoom(15);
-      } catch (e) {}
-    } catch (e) {
-      console.warn("Failed to create emergency marker:", e);
-    }
-  }, [isLoaded, emergencyLocation]);
-
-  // Upsert volunteer: update marker, append to trail, update direct line
-  const upsertVolunteer = (vol) => {
-    if (!window.google?.maps || !mapRef.current) return;
-    const vid = vol._id || vol.id;
-    const newPos = coordsFromGeoJSON(vol.currentLocation) || (vol.latitude && vol.longitude ? { lat: parseFloat(vol.latitude), lng: parseFloat(vol.longitude) } : null);
-    if (!newPos) return;
-
-    const data = volunteerDataRef.current;
-    let entry = data.get(vid);
-
-    if (!entry) {
-      // create new entry
-      const marker = createMarker(newPos, vol);
-      const trail = createTrailPolyline('#2196f3');
-      const direct = createDirectLine('#ff8a65');
-      const path = [newPos];
-      trail.setPath(path);
-      direct.setPath([newPos, emergencyLocation]);
-      entry = { marker, trailPolyline: trail, toEmergencyLine: direct, path, lastUpdated: vol.lastUpdated || null };
-      data.set(vid, entry);
+    if (apiLoadError) {
+      console.error("Google Maps load error:", apiLoadError);
+      setLoadError(apiLoadError);
       return;
     }
+    if (apiIsLoaded) setIsLoaded(true);
+  }, [apiIsLoaded, apiLoadError]);
 
-    // update marker position
-    try {
-      if (entry.marker) {
-        if (entry.marker.setPosition) entry.marker.setPosition(newPos);
-        else if (entry.marker.position) entry.marker.position = newPos;
-      }
-    } catch (e) {}
-
-    // append to path (maintain max length)
-    entry.path = entry.path || [];
-    const last = entry.path[entry.path.length - 1];
-    const sameAsLast = last && last.lat === newPos.lat && last.lng === newPos.lng;
-    if (!sameAsLast) {
-      entry.path.push(newPos);
-      if (entry.path.length > MAX_TRAIL_POINTS) entry.path.shift();
-      try { if (entry.trailPolyline) entry.trailPolyline.setPath(entry.path); } catch (e) {}
+  // Create or update the emergency victim marker
+  const upsertVictimMarker = (google, position) => {
+    if (!google || !mapRef.current) return;
+    if (!victimMarkerRef.current) {
+      victimMarkerRef.current = new google.maps.Marker({
+        position,
+        map: mapRef.current,
+        title: "Emergency location",
+        zIndex: 100,
+        optimized: false,
+      });
+    } else {
+      victimMarkerRef.current.setPosition(position);
     }
-
-    // update direct-to-emergency line
-    try {
-      if (entry.toEmergencyLine) {
-        entry.toEmergencyLine.setPath([newPos, emergencyLocation]);
-      }
-    } catch (e) {}
-
-    entry.lastUpdated = vol.lastUpdated || entry.lastUpdated;
-    data.set(vid, entry);
   };
 
-  // Remove volunteer not seen this round
-  const removeVolunteer = (vid) => {
-    const data = volunteerDataRef.current;
-    const entry = data.get(vid);
-    if (!entry) return;
-    try { if (entry.marker.setMap) entry.marker.setMap(null); } catch (e) {}
-    try { if (entry.trailPolyline) entry.trailPolyline.setMap(null); } catch (e) {}
-    try { if (entry.toEmergencyLine) entry.toEmergencyLine.setMap(null); } catch (e) {}
-    data.delete(vid);
-  };
+  // Create or update volunteer markers
+  const upsertVolunteerMarker = (google, volunteer) => {
+    if (!google || !mapRef.current) return;
+    const id = volunteer._id || volunteer.id;
+    const pos = volunteer.currentLocation?.coordinates
+      ? { lat: volunteer.currentLocation.coordinates[1], lng: volunteer.currentLocation.coordinates[0] }
+      : (volunteer.lat && volunteer.lng ? { lat: volunteer.lat, lng: volunteer.lng } : null);
 
-  // Fetch volunteer positions (controller endpoints: live-tracking or responding-volunteers)
-  const fetchVolunteerPositions = useCallback(async () => {
-    if (!emergency?.id) return;
-    if (isPollingRef.current) return; // skip overlapping calls
-    isPollingRef.current = true;
-    setLastFetchError(null);
+    if (!pos) return;
 
-    const primary = `/emergencies/${emergency.id}/live-tracking`;
-    const fallback = `/emergencies/${emergency.id}/responding-volunteers`;
-
-    try {
-      let resp;
-      try {
-        resp = await api.get(primary);
-      } catch (errPrimary) {
-        if (errPrimary?.response?.status === 404) {
-          resp = await api.get(fallback);
-        } else {
-          throw errPrimary;
-        }
-      }
-
-      const payload = resp.data;
-      let list = [];
-      if (Array.isArray(payload)) list = payload;
-      else if (Array.isArray(payload.volunteers)) list = payload.volunteers;
-      else if (Array.isArray(payload.data)) list = payload.data;
-      else if (Array.isArray(payload.volunteersWithTracking)) list = payload.volunteersWithTracking;
-      else list = [];
-
-      // seen set
-      const seen = new Set();
-
-      list.forEach((vol) => {
-        const vid = vol._id || vol.id;
-        if (!vid) return;
-        seen.add(vid);
-        upsertVolunteer(vol);
+    const existing = volunteerMarkersRef.current[id];
+    if (!existing) {
+      const marker = new google.maps.Marker({
+        position: pos,
+        map: mapRef.current,
+        title: volunteer.name || "Volunteer",
+        zIndex: 90,
+        optimized: false,
       });
 
-      // remove stale markers
-      for (const vid of Array.from(volunteerDataRef.current.keys())) {
-        if (!seen.has(vid)) removeVolunteer(vid);
-      }
+      const infoWindow = new google.maps.InfoWindow({
+        content: `<div style="min-width:140px"><strong>${volunteer.name || "Volunteer"}</strong><br/>ETA: ${volunteer.eta ?? "N/A"} min<br/>Last: ${volunteer.lastUpdated ? new Date(volunteer.lastUpdated).toLocaleTimeString() : "N/A"}</div>`
+      });
 
-      // fit bounds to include emergency + volunteers (if any)
-      try {
-        const gm = window.google?.maps;
-        if (gm && mapRef.current) {
-          const bounds = new gm.LatLngBounds();
-          bounds.extend(new gm.LatLng(emergencyLocation.lat, emergencyLocation.lng));
-          for (const entry of volunteerDataRef.current.values()) {
-            const marker = entry.marker;
-            const pos = marker?.getPosition ? marker.getPosition() : (marker?.position ? marker.position : null);
-            if (pos) bounds.extend(pos);
-          }
-          if (!bounds.isEmpty && typeof mapRef.current.fitBounds === "function") {
-            mapRef.current.fitBounds(bounds, 80);
-          }
-        }
-      } catch (e) {}
-
-      setLastFetchError(null);
-    } catch (err) {
-      console.warn("Failed to fetch live tracking:", err);
-      setLastFetchError(err?.response?.data?.message || err.message || "Fetch error");
-    } finally {
-      isPollingRef.current = false;
+      marker.addListener("click", () => infoWindow.open(mapRef.current, marker));
+      volunteerMarkersRef.current[id] = marker;
+    } else {
+      existing.setPosition(pos);
     }
-  }, [emergency?.id, emergencyLocation]);
+  };
 
-  // Start polling / stop cleanup
+  // Remove markers that are no longer present in the response
+  const pruneVolunteerMarkers = (currentVolunteers) => {
+    const keepIds = new Set(currentVolunteers.map((v) => v._id || v.id));
+    Object.keys(volunteerMarkersRef.current).forEach((id) => {
+      if (!keepIds.has(id)) {
+        const marker = volunteerMarkersRef.current[id];
+        marker.setMap(null);
+        delete volunteerMarkersRef.current[id];
+      }
+    });
+  };
+
+  // Optionally draw a polyline from each volunteer to victim (or a single polyline if you want)
+  const updatePolylines = (google, volunteers, victimPos) => {
+    // For simplicity we'll draw a single polyline joining volunteers to the victim
+    // Remove previous polyline
+    if (!google) return;
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    // Build paths: from each volunteer to victim (multiple segments merged)
+    const paths = [];
+    volunteers.forEach((v) => {
+      const coords = v.currentLocation?.coordinates;
+      if (coords) {
+        paths.push({ lat: coords[1], lng: coords[0] });
+        // and then victim
+        if (victimPos) paths.push(victimPos);
+      }
+    });
+
+    if (paths.length > 1) {
+      polylineRef.current = new google.maps.Polyline({
+        path: paths,
+        geodesic: true,
+        map: mapRef.current,
+        strokeOpacity: 0.6,
+        strokeWeight: 2,
+      });
+    }
+  };
+
+  // Fetch live tracking data from backend (emergency id must be available)
+  const fetchLiveTracking = async (emergencyId) => {
+    if (!emergencyId) return;
+    try {
+      // primary endpoint - returns volunteers + emergency
+      const { data } = await api.get(`/emergencies/${emergencyId}/live-tracking`);
+      if (!data || !data.success) return;
+      const volunteers = data.volunteers || [];
+      const emergencyData = data.emergency || {};
+
+      // store for pruning
+      volunteersRef.current = volunteers;
+
+      // Use real google object
+      const google = window.google;
+      const victimPos = emergencyData.location?.coordinates
+        ? { lat: emergencyData.location.coordinates[1], lng: emergencyData.location.coordinates[0] }
+        : parseLocationString(emergency?.location);
+
+      upsertVictimMarker(google, victimPos);
+
+      // Upsert volunteers markers
+      volunteers.forEach((v) => upsertVolunteerMarker(google, v));
+      pruneVolunteerMarkers(volunteers);
+
+      // draw polylines if desired
+      updatePolylines(google, volunteers, victimPos);
+
+      // Optionally, adjust map bounds to show victim + volunteers
+      try {
+        const bounds = new window.google.maps.LatLngBounds();
+        if (victimPos && typeof victimPos.lat === "number") bounds.extend(victimPos);
+        volunteers.forEach((v) => {
+          if (v.currentLocation?.coordinates) {
+            bounds.extend({ lat: v.currentLocation.coordinates[1], lng: v.currentLocation.coordinates[0] });
+          }
+        });
+        // Only fit bounds if there are at least two points
+        if (!bounds.isEmpty && (volunteers.length > 0)) mapRef.current.fitBounds(bounds, 80);
+      } catch (e) {
+        // ignore fitBounds errors
+      }
+
+    } catch (err) {
+      console.error("Failed to fetch live tracking:", err);
+    }
+  };
+
+  // Periodic polling effect
   useEffect(() => {
-    if (!isLoaded || !emergency?.id) return;
+    if (!isLoaded || !emergency?._id) return;
 
-    // initial run
-    fetchVolunteerPositions();
+    // Immediately fetch once
+    fetchLiveTracking(emergency._id);
 
-    // set interval
-    pollTimerRef.current = setInterval(fetchVolunteerPositions, POLL_INTERVAL_MS);
+    const t = setInterval(() => {
+      fetchLiveTracking(emergency._id);
+    }, REFRESH_MS);
 
-    return () => {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-
-      // cleanup all volunteer overlays
-      for (const [vid, entry] of volunteerDataRef.current.entries()) {
-        try { if (entry.marker && entry.marker.setMap) entry.marker.setMap(null); } catch (e) {}
-        try { if (entry.trailPolyline) entry.trailPolyline.setMap(null); } catch (e) {}
-        try { if (entry.toEmergencyLine) entry.toEmergencyLine.setMap(null); } catch (e) {}
-      }
-      volunteerDataRef.current.clear();
-    };
-  }, [isLoaded, emergency?.id, fetchVolunteerPositions]);
-
-  // full unmount cleanup
-  useEffect(() => {
-    return () => {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-      if (emergencyMarkerRef.current) {
-        try { if (emergencyMarkerRef.current.setMap) emergencyMarkerRef.current.setMap(null); } catch (e) {}
-        emergencyMarkerRef.current = null;
-      }
-      for (const entry of volunteerDataRef.current.values()) {
-        try { if (entry.marker && entry.marker.setMap) entry.marker.setMap(null); } catch (e) {}
-        try { if (entry.trailPolyline) entry.trailPolyline.setMap(null); } catch (e) {}
-        try { if (entry.toEmergencyLine) entry.toEmergencyLine.setMap(null); } catch (e) {}
-      }
-      volunteerDataRef.current.clear();
-    };
-  }, []);
+    return () => clearInterval(t);
+  }, [isLoaded, emergency?._id]);
 
   if (loadError) {
-    return <div style={{ padding: 12, color: "#ff6b6b" }}>Map load error. Check API key and network.</div>;
+    return <div style={{ padding: 12, color: "#ff6b6b" }}>Map error: {String(loadError)}</div>;
   }
-  if (!isLoaded) {
-    return <div style={{ padding: 12 }}>Loading map...</div>;
-  }
+
+  if (!showMap) return null;
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      <GoogleMap
-        mapContainerStyle={MAP_CONTAINER_STYLE}
-        center={emergencyLocation}
-        zoom={15}
-        options={MAP_OPTIONS}
-        onLoad={onLoad}
-      >
-        {/* rendering done imperatively */}
-      </GoogleMap>
-
-      {lastFetchError && (
-        <div style={{
-          position: "absolute",
-          right: 12,
-          bottom: 12,
-          zIndex: 9999,
-          background: "rgba(0,0,0,0.6)",
-          color: "white",
-          padding: "6px 10px",
-          borderRadius: 6
-        }}>
-          Volunteer fetch error
-        </div>
+    <div style={{ width: "100%", minHeight: "420px", borderRadius: 12, overflow: "hidden" }}>
+      {!isLoaded ? (
+        <div style={{ padding: 12 }}>Loading map…</div>
+      ) : (
+        <GoogleMap
+          mapContainerStyle={MAP_CONTAINER_STYLE || { width: "100%", height: "420px" }}
+          center={center}
+          zoom={15}
+          options={MAP_OPTIONS}
+          onLoad={(mapInstance) => {
+            mapRef.current = mapInstance;
+          }}
+        />
       )}
     </div>
   );

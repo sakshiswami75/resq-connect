@@ -38,6 +38,8 @@ router.route('/:id')
 router.put('/:id/respond', protect, volunteerOrAdmin, respondToEmergency);
 router.put('/:id/status', protect, volunteerOrAdmin, updateEmergencyStatus);
 router.post('/:id/notes', protect, addNote);
+router.get('/:id/live-tracking', protect, volunteerOrAdmin, getLiveTracking);
+router.get('/:id/responding-volunteers', protect, volunteerOrAdmin, getRespondingVolunteers);
 
 // --- LIVE TRACKING / VOLUNTEER LOCATION ROUTES ---
 // Note: use param name "emergencyId" to match controller's req.params
